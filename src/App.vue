@@ -1,7 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-
-const STORAGE_KEY = 'day-planner-state-v2'
+import { supabase } from './lib/supabase'
 
 // Date header
 const plannerDate = ref(new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }))
@@ -53,33 +52,69 @@ const categories = ref([
 ])
 
 const armedItem = ref(null)
-const saveStatus = ref('saved') // 'saved', 'saving'
+const saveStatus = ref('saved') // 'saved', 'saving', 'error'
 let saveTimer = null
+let recordId = null // Supabase row ID if exists
 
-// Load saved state on mount
-onMounted(() => {
-  const saved = localStorage.getItem(STORAGE_KEY)
-  if (saved) {
-    try {
-      const data = JSON.parse(saved)
-      if (data.date) plannerDate.value = data.date
+// Load planner data from Supabase on mount
+onMounted(async () => {
+  try {
+    saveStatus.value = 'saving'
+    const { data, error } = await supabase
+      .from('planners')
+      .select('*')
+      .limit(1)
+      .maybeSingle()
+
+    if (error) throw error
+
+    if (data) {
+      recordId = data.id
+      if (data.planner_date) plannerDate.value = data.planner_date
       if (data.hours) hours.value = data.hours
-    } catch (e) {
-      console.error('Failed to load saved planner', e)
     }
+    saveStatus.value = 'saved'
+  } catch (err) {
+    console.error('Error loading from Supabase:', err)
+    saveStatus.value = 'error'
   }
 })
 
+// Save planner data to Supabase (debounced)
 const triggerSave = () => {
   saveStatus.value = 'saving'
   clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      date: plannerDate.value,
-      hours: hours.value
-    }))
-    saveStatus.value = 'saved'
-  }, 400)
+  saveTimer = setTimeout(async () => {
+    try {
+      const payload = {
+        planner_date: plannerDate.value,
+        hours: hours.value
+      }
+
+      if (recordId) {
+        // Update existing record
+        const { error } = await supabase
+          .from('planners')
+          .update(payload)
+          .eq('id', recordId)
+        if (error) throw error
+      } else {
+        // Insert new record
+        const { data, error } = await supabase
+          .from('planners')
+          .insert([payload])
+          .select()
+          .single()
+        if (error) throw error
+        if (data) recordId = data.id
+      }
+
+      saveStatus.value = 'saved'
+    } catch (err) {
+      console.error('Error saving to Supabase:', err)
+      saveStatus.value = 'error'
+    }
+  }, 600)
 }
 
 const selectItem = (item, catColor) => {
@@ -103,14 +138,14 @@ const removeChip = (hourIndex, chipIndex) => {
   triggerSave()
 }
 
-const clearDay = () => {
-  if (confirm('Clear all tasks and notes for this day?')) {
-    hours.value.forEach(h => {
-      h.chips = []
-      h.note = ''
-    })
-    triggerSave()
-  }
+const clearDay = async () => {
+  if (!confirm('Clear all tasks and notes for this day?')) return
+  
+  hours.value.forEach(h => {
+    h.chips = []
+    h.note = ''
+  })
+  triggerSave()
 }
 </script>
 
@@ -147,8 +182,8 @@ const clearDay = () => {
           <!-- Save status & reset -->
           <div class="flex items-center gap-3 text-xs text-slate-500 font-medium">
             <span class="flex items-center gap-1.5">
-              <span :class="['w-2 h-2 rounded-full transition-colors', saveStatus === 'saved' ? 'bg-emerald-600' : 'bg-amber-500 animate-pulse']"></span>
-              {{ saveStatus === 'saved' ? 'saved' : 'saving...' }}
+              <span :class="['w-2 h-2 rounded-full transition-colors', saveStatus === 'saved' ? 'bg-emerald-600' : saveStatus === 'saving' ? 'bg-amber-500 animate-pulse' : 'bg-red-500']"></span>
+              {{ saveStatus === 'saved' ? 'saved to supabase' : saveStatus === 'saving' ? 'saving...' : 'save error' }}
             </span>
             <button @click="clearDay" class="border border-[#b9b4a4] bg-white hover:bg-slate-100 text-slate-700 px-2.5 py-1 rounded-md transition flex items-center gap-1">
               Clear day
@@ -232,7 +267,7 @@ const clearDay = () => {
 
     <!-- Footer Help Hint -->
     <div class="mt-6 max-w-xl text-center text-xs text-slate-600 bg-white/60 backdrop-blur border border-[#b9b4a4]/40 rounded-lg p-3">
-      Click a coloured tile in the sidebar to <b>arm</b> it, then click any time slot on the schedule to place it. Changes save instantly.
+      Click a coloured tile in the sidebar to <b>arm</b> it, then click any time slot on the schedule to place it. Changes save automatically to Supabase.
     </div>
 
   </div>

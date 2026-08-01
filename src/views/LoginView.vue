@@ -12,6 +12,7 @@ const signInWithGoogle = () => supabase.auth.signInWithOAuth({
 })
 </script>
 
+
 <template>
   <div class="min-h-screen bg-gradient-to-br from-[#d9d4c4] via-[#c7c1ac] to-[#b8b19a] flex items-center justify-center p-4">
     <div class="bg-white/95 rounded-2xl shadow-2xl p-8 sm:p-12 w-full max-w-md border-[6px] border-[#c9c2ab]">

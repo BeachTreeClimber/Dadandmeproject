@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { supabase } from '../supabase/client'
+import { useRole } from '../composables/useRole'
 
 const routes = [
   {
@@ -11,6 +12,12 @@ const routes = [
     path: '/callback',
     name: 'Callback',
     component: () => import('../views/CallbackView.vue'),
+  },
+  {
+    path: '/admin',
+    name: 'Admin',
+    component: () => import('../views/AdminView.vue'),
+    meta: { requiresAuth: true, role: ['admin'] },
   },
   {
     path: '/',
@@ -40,6 +47,16 @@ router.beforeEach(async (to, from, next) => {
   if (session && to.name === 'Login') {
     next({ name: 'Home' })
     return
+  }
+
+  if (session && to.meta.role) {
+    const { fetchRole } = useRole()
+    const userRoles = await fetchRole()
+
+    if (!userRoles.some(r => to.meta.role.includes(r))) {
+      next({ name: 'Home' })
+      return
+    }
   }
 
   next()

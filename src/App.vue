@@ -57,6 +57,11 @@ const handleSignOut = async () => {
               class="text-sm font-medium text-slate-600 hover:text-[#1f5fbf] transition-colors shrink-0">
               Manage Access
             </router-link>
+
+            <router-link v-if="isLoggedIn && hasRole('admin') && !roleLoading" to="/settings"
+              class="text-sm font-medium text-slate-600 hover:text-[#1f5fbf] transition-colors shrink-0">
+              Settings
+            </router-link>
           </div>
 
           <div class="flex items-center gap-2 shrink-0">

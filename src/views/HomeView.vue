@@ -56,7 +56,7 @@ const saveStatus = ref('saved') // 'saved', 'saving', 'error'
 let saveTimer = null
 let recordId = null // Supabase row ID if exists
 
-// Load the current user's planner data from Supabase on mount
+// Load the shared family planner from Supabase on mount
 onMounted(async () => {
   try {
     saveStatus.value = 'saving'
@@ -66,7 +66,7 @@ onMounted(async () => {
     const { data, error } = await supabase
       .from('planners')
       .select('*')
-      .eq('user_id', user.id)
+      .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle()
 

@@ -14,6 +14,17 @@ const routes = [
     component: () => import('../views/CallbackView.vue'),
   },
   {
+    path: '/no-access',
+    name: 'NoAccess',
+    component: () => import('../views/NoAccessView.vue'),
+  },
+  {
+    path: '/settings',
+    name: 'Settings',
+    component: () => import('../views/SettingsView.vue'),
+    meta: { requiresAuth: true, role: ['admin'] },
+  },
+  {
     path: '/admin',
     name: 'Admin',
     component: () => import('../views/AdminView.vue'),
@@ -23,7 +34,7 @@ const routes = [
     path: '/',
     name: 'Home',
     component: () => import('../views/HomeView.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, role: ['admin', 'edit'] },
   },
   {
     path: '/:pathMatch(.*)*',
@@ -54,7 +65,11 @@ router.beforeEach(async (to, from, next) => {
     const userRoles = await fetchRole()
 
     if (!userRoles.some(r => to.meta.role.includes(r))) {
-      next({ name: 'Home' })
+      if (to.name === 'NoAccess') {
+        next()
+      } else {
+        next({ name: 'NoAccess' })
+      }
       return
     }
   }

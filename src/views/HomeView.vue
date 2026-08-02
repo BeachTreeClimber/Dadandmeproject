@@ -25,22 +25,29 @@ const openDatePicker = async () => {
   dateInputRef.value?.showPicker?.()
 }
 
-const onDateChange = (e) => {
+const onDateChange = async (e) => {
   const value = e.target.value
   if (value) {
     const [y, m, d] = value.split('-').map(Number)
     selectedDate.value = new Date(y, m - 1, d)
-    triggerSave()
+    dateInputVisible.value = false
+    try {
+      await loadPlanner()
+    } catch (err) {
+      console.error('Error loading planner:', err)
+      saveStatus.value = 'error'
+    }
+  } else {
+    dateInputVisible.value = false
   }
-  dateInputVisible.value = false
 }
 
 const cancelDateEdit = () => {
   dateInputVisible.value = false
 }
 
-// Hours schedule
-const hours = ref([
+// Hours schedule (fresh blank board for each new day)
+const defaultHours = () => [
   { time: '7:00 AM', chips: [], note: '' },
   { time: '8:00 AM', chips: [], note: '' },
   { time: '9:00 AM', chips: [], note: '' },
@@ -55,7 +62,8 @@ const hours = ref([
   { time: '6:00 PM', chips: [], note: '' },
   { time: '7:00 PM', chips: [], note: '' },
   { time: '8:00 PM', chips: [], note: '' },
-])
+]
+const hours = ref(defaultHours())
 
 // Categories & items
 const categories = ref([
@@ -90,64 +98,67 @@ const saveStatus = ref('saved') // 'saved', 'saving', 'error'
 let saveTimer = null
 let recordId = null // Supabase row ID if exists
 
-// Load the shared family planner from Supabase on mount
+// Load the planner for the currently selected day (blank if none saved yet)
+const loadPlanner = async () => {
+  clearTimeout(saveTimer)
+  saveStatus.value = 'saving'
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return
+
+  const { data, error } = await supabase
+    .from('planners')
+    .select('*')
+    .eq('planner_date', dateInputValue.value)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) throw error
+
+  if (data) {
+    recordId = data.id
+    if (data.hours) hours.value = data.hours
+  } else {
+    recordId = null
+    hours.value = defaultHours()
+  }
+  saveStatus.value = 'saved'
+}
+
 onMounted(async () => {
   try {
-    saveStatus.value = 'saving'
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    const { data, error } = await supabase
-      .from('planners')
-      .select('*')
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle()
-
-    if (error) throw error
-
-    if (data) {
-      recordId = data.id
-      if (data.planner_date) {
-        const parsed = new Date(data.planner_date)
-        if (!isNaN(parsed.getTime())) selectedDate.value = parsed
-      }
-      if (data.hours) hours.value = data.hours
-    }
-    saveStatus.value = 'saved'
+    await loadPlanner()
   } catch (err) {
     console.error('Error loading from Supabase:', err)
     saveStatus.value = 'error'
   }
 })
 
-// Save planner data to Supabase (debounced)
+// Save planner data to Supabase (debounced), one row per day
 const triggerSave = () => {
   saveStatus.value = 'saving'
   clearTimeout(saveTimer)
   saveTimer = setTimeout(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const payload = {
-        user_id: user.id,
-        planner_date: formattedDate.value,
-        hours: hours.value
-      }
-
       if (recordId) {
-        // Update existing record
+        // Update the existing day's record
         const { error } = await supabase
           .from('planners')
-          .update(payload)
+          .update({ hours: hours.value })
           .eq('id', recordId)
         if (error) throw error
       } else {
-        // Insert new record
+        // Insert a new record for this day
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+
         const { data, error } = await supabase
           .from('planners')
-          .insert([payload])
+          .insert([{
+            user_id: user.id,
+            planner_date: dateInputValue.value,
+            hours: hours.value
+          }])
           .select()
           .single()
         if (error) throw error

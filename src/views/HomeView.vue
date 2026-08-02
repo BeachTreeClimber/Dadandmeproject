@@ -1,9 +1,43 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { supabase } from '../supabase/client'
 
-// Date header
-const plannerDate = ref(new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }))
+// Date header — defaults to today, click to change the day
+const selectedDate = ref(new Date())
+const dateInputVisible = ref(false)
+const dateInputRef = ref(null)
+
+const formattedDate = computed(() =>
+  selectedDate.value.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+)
+
+const dateInputValue = computed(() => {
+  const d = selectedDate.value
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+})
+
+const openDatePicker = async () => {
+  dateInputVisible.value = true
+  await nextTick()
+  dateInputRef.value?.showPicker?.()
+}
+
+const onDateChange = (e) => {
+  const value = e.target.value
+  if (value) {
+    const [y, m, d] = value.split('-').map(Number)
+    selectedDate.value = new Date(y, m - 1, d)
+    triggerSave()
+  }
+  dateInputVisible.value = false
+}
+
+const cancelDateEdit = () => {
+  dateInputVisible.value = false
+}
 
 // Hours schedule
 const hours = ref([
@@ -74,7 +108,10 @@ onMounted(async () => {
 
     if (data) {
       recordId = data.id
-      if (data.planner_date) plannerDate.value = data.planner_date
+      if (data.planner_date) {
+        const parsed = new Date(data.planner_date)
+        if (!isNaN(parsed.getTime())) selectedDate.value = parsed
+      }
       if (data.hours) hours.value = data.hours
     }
     saveStatus.value = 'saved'
@@ -95,7 +132,7 @@ const triggerSave = () => {
 
       const payload = {
         user_id: user.id,
-        planner_date: plannerDate.value,
+        planner_date: formattedDate.value,
         hours: hours.value
       }
 
@@ -170,12 +207,26 @@ const clearDay = async () => {
       <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b-2 border-[#b9b4a4] mb-6">
         <div class="flex items-baseline gap-4">
           <h1 class="text-3xl md:text-4xl font-bold text-[#1f5fbf]" style="font-family: 'Kalam', cursive;">Today</h1>
-          <input 
-            v-model="plannerDate" 
-            @input="triggerSave"
-            type="text" 
-            class="text-xl text-[#1f2430] bg-transparent border-b-2 border-dotted border-[#b9b4a4] focus:outline-none focus:border-[#1f5fbf] px-1"
+
+          <input
+            v-if="dateInputVisible"
+            ref="dateInputRef"
+            type="date"
+            :value="dateInputValue"
+            @change="onDateChange"
+            @blur="cancelDateEdit"
+            class="text-xl text-[#1f2430] bg-transparent border-b-2 border-dotted border-[#1f5fbf] focus:outline-none px-1"
+            autofocus
           />
+          <button
+            v-else
+            @click="openDatePicker"
+            type="button"
+            title="Click to change the date"
+            class="text-xl text-[#1f2430] bg-transparent border-b-2 border-dotted border-[#b9b4a4] hover:border-[#1f5fbf] focus:outline-none px-1 cursor-pointer text-left"
+          >
+            {{ formattedDate }}
+          </button>
         </div>
 
         <div class="flex flex-col items-start md:items-end gap-2">
